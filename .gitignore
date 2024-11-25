@@ -1,5 +1,6 @@
-.vscode/*
-venv/*
-app/__pycache__/*
-
+.vscode/
+venv/
 .env
+
+
+__pycache__/

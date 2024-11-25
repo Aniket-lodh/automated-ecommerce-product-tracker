@@ -24,7 +24,7 @@ This project is an automated platform designed to track e-commerce product infor
 ## Project Structure
 
     ```bash
-        my_project/
+        automated-ecommerce-product-tracker/
         ├── app/
         │   ├── __init__.py
         │   ├── main.py
