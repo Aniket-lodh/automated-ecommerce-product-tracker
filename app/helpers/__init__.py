@@ -5,8 +5,10 @@ import os
 import secrets
 import time
 import traceback
-from typing import Optional
-from fastapi import HTTPException
+from typing import Any, Optional, Union
+from urllib import response
+from fastapi import HTTPException, Response
+from pydantic import InstanceOf
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from crud.users import get_user
@@ -14,6 +16,11 @@ import models
 import pytz
 from crud.schemas import UsersSessionReqModel
 import smtplib
+import jwt
+
+SECRET_KEY = os.getenv("SECRECT_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 
 def generate_secure_otp():
@@ -69,16 +76,6 @@ def confirm_otp(request_body: UsersSessionReqModel, db: Session):
         if otp_expired:
             raise Exception("Otp expired, please try again!")
 
-        # mark otp has verified in db and update user as verified
-        # verified_user = (
-        #     db.query(models.Users)
-        #     .filter(models.Users.id == verified_otp.user_id)
-        #     .first()
-        # )
-
-        # if verified_user is None:
-        #     raise Exception("User no longer exist!!")
-
         verified_otp.verified_at = datetime.now(pytz.utc)
         existing_user.verified_at = datetime.now(pytz.utc)
         existing_user.updated_at = datetime.now(pytz.utc)
@@ -89,7 +86,9 @@ def confirm_otp(request_body: UsersSessionReqModel, db: Session):
         db.refresh(verified_otp)
         db.refresh(existing_user)
 
-        return verified_otp
+        token = create_jwt(existing_user, expires_delta=timedelta(hours=1))
+
+        return token
     except Exception as e:
         db.rollback()
         raise Exception(str(e))
@@ -166,3 +165,47 @@ def email_otp(email: str, otp: int):
     except Exception as e:
         print(f"Error sending OTP email: {e}")
         return False
+
+
+def create_jwt(data: Union[dict, Any], expires_delta: timedelta):
+    """Creates a JWT token with an expiration time."""
+    if not isinstance(data, dict):
+        payload = {
+            "user_id": data.id,
+            "email": data.email,
+            "verified_at": str(data.verified_at),
+            "logged_in": data.logged_in,
+            "email_verified": data.email_verified,
+        }
+    else:
+        payload = data
+
+    expire = datetime.utcnow() + expires_delta
+    payload.update({"exp": expire})
+    return jwt.encode(payload=payload, algorithm=ALGORITHM, key=SECRET_KEY)
+
+
+def set_cookie(
+    response: Response, key: str, value: str, max_age: int = 3600, path: str = "/"
+):
+    """Sets a cookie based on the environment (development or production)."""
+    if ENVIRONMENT == "production":
+        response.set_cookie(
+            key=key,
+            value=value,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            max_age=max_age,
+            path=path,
+        )
+    else:
+        response.set_cookie(
+            key=key,
+            value=value,
+            httponly=True,
+            secure=False,
+            samesite="Lax",
+            max_age=max_age,
+            path=path,
+        )
